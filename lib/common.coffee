@@ -129,6 +129,25 @@ exports.parentParameter = (parameter) ->
   return parameter[0...i]
 
 
+descendantOf = (parameter, ancestor) ->
+  if ancestor == parameter
+    return 0
+
+  if not exports.startsWith(parameter, ancestor)
+    return -1
+
+  if parameter[ancestor.length] != '.'
+    return -1
+
+  parameterArray = if parameter == '' then [] else parameter.split('.')
+
+  if ancestor == ''
+    return parameterArray.length
+
+  ancestorArray = ancestor.split('.')
+  return parameterArray.length - ancestorArray.length
+
+
 exports.UNDEFINED_TYPE = UNDEFINED_TYPE
 exports.NULL_TYPE = NULL_TYPE
 exports.NUMBER_TYPE = NUMBER_TYPE
@@ -138,3 +157,4 @@ exports.OBJECT_TYPE = OBJECT_TYPE
 exports.REGEXP_TYPE = REGEXP_TYPE
 
 exports.typeOf = typeOf
+exports.descendantOf = descendantOf
