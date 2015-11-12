@@ -251,12 +251,7 @@ listener = (request, response) ->
     else if DEVICE_PRESET_REGEX.test(urlParts.pathname)
       deviceId = querystring.unescape(DEVICE_PRESET_REGEX.exec(urlParts.pathname)[1])
       if request.method is 'GET'
-        db.getPresetsObjectsAliases((allPresets, allObjects, allAliases) ->
-          presets.getDevicePreset(deviceId, allPresets, allObjects, allAliases, (devicePreset) ->
-            response.writeHead(200, {'Content-Type' : 'application/json'})
-            response.end(JSON.stringify(devicePreset))
-          )
-        )
+        throw new Error('Not implemented')
       else
         response.writeHead 405, {'Allow': 'GET'}
         response.end('405 Method Not Allowed')

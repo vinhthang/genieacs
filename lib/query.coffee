@@ -1,4 +1,22 @@
 ###
+# Copyright 2013-2015  Zaid Abdulla
+#
+# GenieACS is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# GenieACS is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with GenieACS.  If not, see <http://www.gnu.org/licenses/>.
+#
+# This file incorporates work covered by the following copyright and
+# permission notice:
+#
 # Copyright 2013 Fanoos Telecom
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -75,7 +93,7 @@ permute = (param, val, aliases) ->
     values = expandValue(k, val)
     if k[k.lastIndexOf('.') + 1] != '_'
       k += '._value'
-  
+
     for v in values
       obj = {}
       obj[k] = v
@@ -104,6 +122,7 @@ expand = (query, aliases) ->
 
   return new_query
 
+
 # Replace _id string values with ObjectID type
 substituteObjectId = (query) ->
   for k, v of query
@@ -129,5 +148,108 @@ substituteObjectId = (query) ->
   return query
 
 
+testExpressions = (params, expressions, lop) ->
+  for f in expressions
+    res = test(params, f)
+
+    switch lop
+      when '$and'
+        return false if not res
+      when '$or'
+        return true if res
+      when '$nor'
+        return false if res
+
+  return switch lop
+    when '$and' then true
+    when '$or' then false
+    when '$nor' then true
+    else throw new Error('Unknown logical operator')
+
+
+test = (params, query) ->
+  for k,v of query
+    if k.charAt(0) == '$' # this is a logical operator
+      res = testExpressions(params, v, k)
+    else
+      value = params[k]?.value
+
+      if common.typeOf(v) isnt common.OBJECT_TYPE
+        # TODO comparing array to regex, array to array, and object to object
+        if common.typeOf(value) is common.ARRAY_TYPE
+          res = value.indexOf(v) != -1
+        else
+          if common.typeOf(v) is common.REGEXP_TYPE
+            res = v.test(value)
+          else
+            res = v == value
+      else
+        for k2,v2 of v
+          switch k2
+            when '$ne'
+              if common.typeOf(value) is common.ARRAY_TYPE
+                res = value.indexOf(v2) == -1
+              else
+                res = value != v2
+            when '$lt'
+              res = value < v2
+            when '$lte'
+              res = value <= v2
+            when '$gt'
+              res = value > v2
+            when '$gte'
+              res = value >= v2
+            when '$regex'
+              res = v2.test(value)
+            when '$in'
+              throw new Error('Operator not supported')
+            when '$nin'
+              throw new Error('Operator not supported')
+            when '$all'
+              throw new Error('Operator not supported')
+            when '$exists'
+              throw new Error('Operator not supported')
+            else
+              throw new Error('Operator not supported')
+
+    if not res
+      return false
+
+  return true
+
+
+# Generate parameter projection from a query
+# If second arg is given, it's edited and returned
+projection = (query, proj) ->
+  proj ?= {}
+  for k,v of query
+    if k.charAt(0) == '$' # this is a logical operator
+      for q in v
+        projection(q, proj)
+    else
+      proj[k] = 1
+  return proj
+
+
+# Optimize projection by removing overlaps
+# This modifies given object and returns it
+optimizeProjection = (obj) ->
+  keys = Object.keys(obj).sort()
+  return if keys.length <= 1
+  i = 1
+  while i < keys.length
+    a = keys[i-1]
+    b = keys[i]
+    if common.startsWith(b, a)
+      if b.charAt(a.length) == '.' or b.charAt(a.length - 1) == '.'
+        delete obj[b]
+        keys.splice(i--, 1)
+    ++ i
+  return obj
+
+
 exports.expand = expand
 exports.substituteObjectId = substituteObjectId
+exports.test = test
+exports.projection = projection
+exports.optimizeProjection = optimizeProjection

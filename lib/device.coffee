@@ -17,7 +17,7 @@
 
 common = require './common'
 db = require './db'
-mongoQuery = require './mongo-query'
+query = require './query'
 DataModel = require './data-model'
 
 
@@ -196,7 +196,7 @@ class Device
             proj["#{k}._object"] = 1
             proj["#{k}._orig"] = 1
 
-      mongoQuery.optimizeProjection(proj)
+      query.optimizeProjection(proj)
 
       db.devicesCollection.findOne({'_id' : @id}, proj, (err, device) =>
         if err
