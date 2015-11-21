@@ -112,7 +112,7 @@ class Session
 
     parent = common.parentParameter(pattern)
     ancestor = parent
-    while ancestor
+    while ancestor?
       ++ counter
       do (ancestor) =>
         @device.get(ancestor, (err, parameters) =>
@@ -145,7 +145,7 @@ class Session
 
       # Wait for parentTimestamps to be collected
       if not parentTimestamps?
-        return process.nextTick(() -> repeat(parameters))
+        return process.nextTick(() -> repeat(null, parameters))
 
       for parameter, values of parameters
         res[parameter] = {}
