@@ -62,6 +62,12 @@ class Session
     @staging['gpn'][parameter] = Math.max(depth, @staging['gpn'][parameter] || 0)
 
 
+  stageSpv: (parameter, value, type, weight) ->
+    @staging['spv'] ?= {}
+    if not (@staging['spv'][parameter]?[0] >= weight)
+      @staging['spv'][parameter] = [weight, value, type]
+
+
   buildQueue: () ->
     @queue = {}
     index = @index
@@ -83,6 +89,15 @@ class Session
         @queue[index++] = {
           type: 'GetParameterValues',
           parameterNames: batch
+        }
+
+    if @staging['spv']?
+      PARAMETERS_BATCH_SIZE = config.get('TASK_PARAMETERS_BATCH_SIZE', @device.id)
+      parameterNames = Object.keys(@staging['spv'])
+      while (batch = parameterNames.splice(0, PARAMETERS_BATCH_SIZE)).length > 0
+        @queue[index++] = {
+          type: 'SetParameterValues',
+          parameterList: ([p, @staging['spv'][p][1], @staging['spv'][p][2]] for p in batch)
         }
 
     return @queue
@@ -153,6 +168,7 @@ class Session
         if valueTimestamp? and not values['object']
           if values['timestamp'] >= valueTimestamp
             res[parameter]['value'] = values['value']
+            res[parameter]['type'] = values['type']
           else
             @stageGpv(parameter)
             satisfied = false
@@ -197,6 +213,37 @@ class Session
       return callback(null, if satisfied then res else null)
 
 
+  assertSet: (assertions, weight, callback) ->
+    counter = 1
+    satisfied = true
+
+    for pattern, options of assertions
+      ++ counter
+      do (pattern, options) =>
+        @get(pattern, 0, 0, 0, (err, r) =>
+          if err
+            callback(err) if -- counter == 0
+            return
+
+          if not r?
+            satisfied = false
+            callback(null, satisfied) if -- counter == 0
+            return
+
+          for k, v of r
+            if options['value']? and v['value']?
+              if (val = common.matchType(v['value'], options['value'])) != v['value']
+                satisfied = false
+                @stageSpv(k, val, v['type'], weight)
+
+          if -- counter == 0
+            return callback(null, satisfied)
+        )
+
+    if -- counter == 0
+      return callback(null, satisfied)
+
+
   rpcResponse: (id, rpcResponse, callback) ->
     return callback(new Error('Request ID not recognized')) if id != "#{@index}"
 
@@ -211,6 +258,9 @@ class Session
       when 'GetParameterNamesResponse'
         return callback(new Error('Response type does not match request type')) if rpc.type isnt 'GetParameterNames'
         @device.setParameterInfo(@timestamp, rpc.parameterPath, rpc.nextLevel, rpcResponse.parameterList)
+      when 'SetParameterValuesResponse'
+        return callback(new Error('Response type does not match request type')) if rpc.type isnt 'SetParameterValues'
+        @device.setParameterValues(@timestamp, rpc.parameterList)
       else
         return callback(new Error('Response type not recognized'))
 
@@ -237,7 +287,7 @@ class Session
             counter = 0
             return
 
-          # TODO process setAssertions too
+          ++ counter
           @assertGet(getAssertions, (err, res) =>
             if err
               callback(err) if -- counter >= 0
@@ -247,6 +297,20 @@ class Session
             if -- counter == 0
               return callback(null, @index, @buildQueue()[@index])
           )
+
+          ++ counter
+          @assertSet(setAssertions, preset.weight, (err, res) =>
+            if err
+              callback(err) if -- counter >= 0
+              counter = 0
+              return
+
+            if -- counter == 0
+              return callback(null, @index, @buildQueue()[@index])
+          )
+
+          if -- counter == 0
+            return callback(null, @index, @buildQueue()[@index])
         )
 
     if -- counter == 0

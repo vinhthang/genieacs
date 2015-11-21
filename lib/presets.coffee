@@ -45,6 +45,8 @@ getActivePresets = (device, callback) ->
             switch c.type
               when 'age'
                 preset.provisions.push(['refresh', c.name, c.age * -1000])
+              when 'value'
+                preset.provisions.push(['value', c.name, c.value])
               else
                 throw new Error("Unknown configuration type #{c.type}")
           res[p._id] = preset

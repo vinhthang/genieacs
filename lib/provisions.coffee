@@ -35,7 +35,11 @@ processProvision = (type, args, callback) ->
       r = 15 - (args[0].split('.').length)
       for i in [0...r]
         getAssertions["#{args[0]}#{repeat('.*', i)}"] = {"value" : args[1], "discover" : args[1]}
-      return callback(null, getAssertions)
+      return callback(null, getAssertions, null)
+    when 'value'
+      setAssertions = {}
+      setAssertions[args[0]] = {'value' : args[1]}
+      return callback(null, null, setAssertions)
     else
       return callback(new Error("Unknown provision type '#{type}'"))
 
