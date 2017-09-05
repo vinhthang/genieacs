@@ -51,6 +51,7 @@ db = require './db'
 query = require './query'
 apiFunctions = require './api-functions'
 cache = require './cache'
+__notification = require('./notification');
 
 VERSION = require('../package.json').version
 
@@ -277,6 +278,13 @@ listener = (request, response) ->
             cache.del("#{deviceId}_tasks_faults_operations", (err) ->
               return throwError(err, response) if err
 
+
+              __notification.notifyTask(taskId, {
+                  message: 'sending',
+                  error: 0,
+                  task: task
+                });
+
               if urlParts.query.connection_request?
                 apiFunctions.connectionRequest(deviceId, (err) ->
                   if err
@@ -289,14 +297,33 @@ listener = (request, response) ->
                       if status is 'timeout'
                         response.writeHead(202, 'Task queued but not processed', {'Content-Type' : 'application/json'})
                         response.end(JSON.stringify(task))
+
+                        __notification.notifyTask(taskId, {
+                            message: 'timeout',
+                            error: 2,
+                            task: task
+                          });
+
                       else if status is 'fault'
                         db.tasksCollection.findOne({_id : task._id}, (err, task) ->
                           return throwError(err, response) if err
+
+                        __notification.notifyTask(taskId, {
+                            message: 'fault',
+                            error: 1,
+                            task: task
+                          });
 
                           response.writeHead(202, 'Task faulted', {'Content-Type' : 'application/json'})
                           response.end(JSON.stringify(task))
                         )
                       else
+                        __notification.notifyTask(taskId, {
+                            message: 'completed',
+                            error: 0,
+                            task: task
+                          });
+
                         response.writeHead(200, {'Content-Type' : 'application/json'})
                         response.end(JSON.stringify(task))
                     )

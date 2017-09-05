@@ -25,3 +25,5 @@ config/fs.key
 config/fs.crt
 config/fs.ca-bundle
 config/ext
+
+*.log

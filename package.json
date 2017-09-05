@@ -25,7 +25,7 @@
     "seedrandom": "^2.4.2"
   },
   "optionalDependencies": {
-    "redis": "^2.6.5"
+    "ioredis": "^3.1.2"
   },
   "devDependencies": {
     "coffeescript": "^1.12.4"
