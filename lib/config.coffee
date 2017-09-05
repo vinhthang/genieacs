@@ -23,9 +23,15 @@ common = require './common'
 options = {
   CONFIG_DIR : {type : 'path', default : 'config'},
   MONGODB_CONNECTION_URL : {type : 'string', default : 'mongodb://127.0.0.1/genieacs'},
-  REDIS_PORT : {type : 'int', default : 6379},
-  REDIS_HOST : {type : 'string', default : ''},
-  REDIS_DB : {type : 'int', default : 0},
+
+  REDIS: {
+    type: 'object',
+    default: {
+      "host": "localhost",
+      "port": 6379,
+      "db": 0
+    }
+  },
 
   CWMP_WORKER_PROCESSES : {type : 'int', default : 0},
   CWMP_PORT : {type : 'int', default : 7547},
@@ -75,7 +81,38 @@ options = {
   XML_IGNORE_NAMESPACE : {type : 'bool', default : false},
 
   # Should probably never be changed
-  DEVICE_ONLINE_THRESHOLD : {type : 'int', default : 4000}
+  DEVICE_ONLINE_THRESHOLD : {type : 'int', default : 4000},
+  # Dasan addons
+  NOTIFICATION_ENABLED: {
+    type: 'bool',
+    "default": true
+  },
+
+  NOTIFICATION_MONITOR_INTERVAL: {
+    type: 'int',
+    "default": 5000
+  },
+  NOTIFICATION_MONITOR: {
+    type: 'string',
+    "default": 'monitor_notification'
+  },
+  NOTIFICATION_EVENT: {
+    type: 'string',
+    "default": 'tr069_notification'
+  },
+  NOTIFICATION_TASK: {
+    type: 'string',
+    "default": 'task_notification'
+  },
+  NOTIFICATION_DEVICE: {
+    type: 'string',
+    "default": 'device_notification'
+  },
+  NOTIFICATION_EVENT_TYPES: {
+    type: 'string',
+    "default": '0 BOOTSTRAP,1 BOOT,2 PERIODIC,3 SCHEDULED,4 VALUE CHANGE,5 KICKED,7 TRANSFER COMPLETE,8 DIAGNOSTICS COMPLETE,9 REQUEST DOWNLOAD,M Reboot'
+  },
+
 }
 
 allConfig = {}
