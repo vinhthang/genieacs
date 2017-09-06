@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "coffee": "^4.1.0",
+    "coffee-script": "^1.12.7",
+    "global": "^4.3.2"
+  }
+}
