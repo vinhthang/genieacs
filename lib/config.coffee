@@ -148,6 +148,8 @@ setConfig = (name, value, commandLineArgument) ->
         Number(val)
       when 'bool'
         String(val).trim().toLowerCase() in ['true', 'on', 'yes', '1']
+      when 'object'
+        val
       when 'string'
         String(val)
       when 'path'

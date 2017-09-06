@@ -51,7 +51,7 @@ db = require './db'
 query = require './query'
 apiFunctions = require './api-functions'
 cache = require './cache'
-__notification = require('./notification');
+__notification = require('./fnf-notification');
 
 VERSION = require('../package.json').version
 
@@ -302,7 +302,7 @@ listener = (request, response) ->
                             message: 'timeout',
                             error: 2,
                             task: task
-                          });
+                          })
 
                       else if status is 'fault'
                         db.tasksCollection.findOne({_id : task._id}, (err, task) ->
@@ -312,7 +312,7 @@ listener = (request, response) ->
                             message: 'fault',
                             error: 1,
                             task: task
-                          });
+                          })
 
                           response.writeHead(202, 'Task faulted', {'Content-Type' : 'application/json'})
                           response.end(JSON.stringify(task))
