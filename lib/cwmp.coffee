@@ -31,7 +31,7 @@ cache = require './cache'
 localCache = require './local-cache'
 db = require './db'
 logger = require './logger'
-__notification = require('./notification');
+__notification = require('./fnf-notification');
 
 MAX_CYCLES = 4
 
