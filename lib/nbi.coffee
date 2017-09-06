@@ -52,6 +52,7 @@ query = require './query'
 apiFunctions = require './api-functions'
 cache = require './cache'
 __notification = require('./fnf-notification');
+__uuidV1 = require('uuid/v1');
 
 VERSION = require('../package.json').version
 
@@ -283,7 +284,7 @@ listener = (request, response) ->
               if urlParts.query.connection_request?
                 apiFunctions.connectionRequest(deviceId, (err) ->
                   if err
-                    __notification.notifyTask(taskId, {
+                    __notification.notifyTask(task._id, {
                       state: 'offline',
                       task: task
                     });
@@ -298,7 +299,7 @@ listener = (request, response) ->
                         response.writeHead(202, 'Task queued but not processed', {'Content-Type' : 'application/json'})
                         response.end(JSON.stringify(task))
 
-                        __notification.notifyTask(taskId, {
+                        __notification.notifyTask(task._id, {
                             state: 'timeout',
                             task: task
                           })
@@ -307,7 +308,7 @@ listener = (request, response) ->
                         db.tasksCollection.findOne({_id : task._id}, (err, task) ->
                           return throwError(err, response) if err
 
-                        __notification.notifyTask(taskId, {
+                        __notification.notifyTask(task._id, {
                             state: 'fault',
                             task: task
                           })
@@ -316,7 +317,7 @@ listener = (request, response) ->
                           response.end(JSON.stringify(task))
                         )
                       else
-                        __notification.notifyTask(taskId, {
+                        __notification.notifyTask(task_.id, {
                             state: 'completed',
                             task: task
                           });
@@ -331,14 +332,19 @@ listener = (request, response) ->
             )
           )
         else if urlParts.query.connection_request?
+          uid = __uuidV1();
+          response.writeHead(202, {
+            'Content-Type': 'application/json'
+          });
+          response.end(JSON.stringify({_id: uid}));
           # no task, send connection request only
           apiFunctions.connectionRequest(deviceId, (err) ->
             if err
-              response.writeHead 504
-              response.end("#{err.name}: #{err.message}")
+              __notification.notifyTask(uid, {state: 'offline',error: err,task: task})
               return
-            response.writeHead 200
-            response.end()
+            __notification.notifyTask(uid, {
+                state: 'ok'
+            })
           )
         else
           response.writeHead(400)
