@@ -911,7 +911,7 @@ listener = (httpRequest, httpResponse) ->
 
         if rpc.cpeRequest.name is 'Inform'
           
-          __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
+          __notification.notifyEvent(sessionContext.deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
 
           logger.accessInfo({
             sessionContext: sessionContext
