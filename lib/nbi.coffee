@@ -279,15 +279,15 @@ listener = (request, response) ->
               return throwError(err, response) if err
 
 
-              __notification.notifyTask(taskId, {
-                  message: 'sending',
-                  error: 0,
-                  task: task
-                });
 
               if urlParts.query.connection_request?
                 apiFunctions.connectionRequest(deviceId, (err) ->
                   if err
+                    __notification.notifyTask(taskId, {
+                      state: 'offline',
+                      task: task
+                    });
+                    
                     response.writeHead(202, err.message, {'Content-Type' : 'application/json'})
                     response.end(JSON.stringify(task))
                   else
@@ -299,8 +299,7 @@ listener = (request, response) ->
                         response.end(JSON.stringify(task))
 
                         __notification.notifyTask(taskId, {
-                            message: 'timeout',
-                            error: 2,
+                            state: 'timeout',
                             task: task
                           })
 
@@ -309,8 +308,7 @@ listener = (request, response) ->
                           return throwError(err, response) if err
 
                         __notification.notifyTask(taskId, {
-                            message: 'fault',
-                            error: 1,
+                            state: 'fault',
                             task: task
                           })
 
@@ -319,8 +317,7 @@ listener = (request, response) ->
                         )
                       else
                         __notification.notifyTask(taskId, {
-                            message: 'completed',
-                            error: 0,
+                            state: 'completed',
                             task: task
                           });
 
