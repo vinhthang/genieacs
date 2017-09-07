@@ -317,7 +317,7 @@ listener = (request, response) ->
                           response.end(JSON.stringify(task))
                         )
                       else
-                        __notification.notifyTask(task_.id, {
+                        __notification.notifyTask(task._id, {
                             state: 'completed',
                             task: task
                           });

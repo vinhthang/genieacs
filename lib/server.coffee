@@ -68,7 +68,7 @@ process.on('uncaughtException', (err) ->
     message: 'Uncaught exception'
     exception: err
   })
-  exit()
+  # exit()
 )
 
 
