@@ -86,7 +86,7 @@ process.on('uncaughtException', (err) ->
     exception: err,
     pid: process.pid
   })
-  exit()
+  # exit()
 )
 
 
