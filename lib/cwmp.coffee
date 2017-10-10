@@ -31,7 +31,7 @@ cache = require './cache'
 localCache = require './local-cache'
 db = require './db'
 logger = require './logger'
-__notification = require('./fnf-notification');
+__notification = require('./notification');
 
 MAX_CYCLES = 4
 
@@ -737,6 +737,8 @@ cacheDueTasksAndFaultsAndOperations = (deviceId, tasks, faults, operations, cach
 processRequest = (sessionContext, rpc) ->
   if rpc.cpeRequest?
     if rpc.cpeRequest.name is 'Inform'
+      __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
+      
       logger.accessInfo({
         sessionContext: sessionContext
         message: 'Inform'
@@ -868,7 +870,6 @@ listener = (httpRequest, httpResponse) ->
           return throwError(err) if err
         )
 
-<<<<<<< HEAD
       processRequest(sessionContext, rpc)
 
     getSession(httpRequest.connection, sessionId, (err, sessionContext) ->
@@ -906,62 +907,6 @@ listener = (httpRequest, httpResponse) ->
         httpResponse.end(err.message)
         stats.concurrentRequests -= 1
         return
-
-      if rpc.cpeRequest?
-
-        if rpc.cpeRequest.name is 'Inform'
-          
-          __notification.notifyEvent(sessionContext.deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
-
-          logger.accessInfo({
-            sessionContext: sessionContext
-            message: 'Inform'
-            rpc: rpc
-          })
-          inform(sessionContext, rpc)
-        else if rpc.cpeRequest.name is 'TransferComplete'
-          logger.accessInfo({
-            sessionContext: sessionContext
-            message: 'CPE request'
-            rpc: rpc
-          })
-          transferComplete(sessionContext, rpc)
-        else if rpc.cpeRequest.name is 'GetRPCMethods'
-          logger.accessInfo({
-            sessionContext: sessionContext
-            message: 'CPE request'
-            rpc: rpc
-          })
-          res = soap.response({
-            id : rpc.id
-            acsResponse : {name: 'GetRPCMethodsResponse', methodList: ['Inform', 'GetRPCMethods', 'TransferComplete']}
-            cwmpVersion : sessionContext.cwmpVersion
-          })
-          writeResponse(sessionContext, res)
-        else
-          return throwError(new Error('ACS method not supported'), sessionContext.httpResponse)
-      else if rpc.cpeResponse
-        session.rpcResponse(sessionContext, rpc.id, rpc.cpeResponse, (err) ->
-          return throwError(err, sessionContext.httpResponse) if err
-          nextRpc(sessionContext)
-        )
-      else if rpc.cpeFault
-        logger.accessWarn({
-          sessionContext: sessionContext
-          message: 'CPE fault'
-          rpc:rpc
-        })
-        session.rpcFault(sessionContext, rpc.id, rpc.cpeFault, (err, fault) ->
-          return throwError(err, sessionContext.httpResponse) if err
-
-          if fault
-            recordFault(sessionContext, fault)
-            session.clearProvisions(sessionContext)
-          nextRpc(sessionContext)
-        )
-      else # CPE sent empty response
-        session.timeoutOperations(sessionContext, (err, faults, operations) ->
-          return throwError(err, sessionContext.httpResponse) if err
 
       return parsedRpc(sessionContext, rpc, parseWarnings) if sessionContext
 
