@@ -738,9 +738,7 @@ cacheDueTasksAndFaultsAndOperations = (deviceId, tasks, faults, operations, cach
 processRequest = (sessionContext, rpc) ->
   if rpc.cpeRequest?
     if rpc.cpeRequest.name is 'Inform'
-       
-       __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
-
+      __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList)
       logger.accessInfo({
         sessionContext: sessionContext
         message: 'Inform'

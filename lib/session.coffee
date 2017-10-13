@@ -1003,8 +1003,8 @@ generateSetRpcRequest = (sessionContext) ->
       device.sanitizeParameterValue(val)
 
 #      if val[0] != curVal[0] or val[1] != curVal[1]
-       parameterValues.push([k, val[0], val[1]])
-       syncState.spv.delete(k)
+      parameterValues.push([k, val[0], val[1]])
+      syncState.spv.delete(k)
   )
 
   if parameterValues.length && (! sessionContext.generatedSetRpcRequest)
