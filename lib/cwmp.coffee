@@ -381,6 +381,7 @@ applyPresets = (sessionContext) ->
 
 
 nextRpc = (sessionContext) ->
+  sessionContext.generatedSetRpcRequest = false;
   session.rpcRequest(sessionContext, null, (err, fault, id, acsRequest) ->
     return throwError(err, sessionContext.httpResponse) if err
 

@@ -782,6 +782,7 @@ rpcRequest = (sessionContext, _declarations, callback) ->
     return rpcRequest(sessionContext, null, callback)
 
   if sessionContext.rpcRequest
+    sessionContext.generatedSetRpcRequest = true;
     return callback(null, null, generateRpcId(sessionContext), sessionContext.rpcRequest)
 
   ++ sessionContext.revisions[inception]
@@ -1001,12 +1002,12 @@ generateSetRpcRequest = (sessionContext) ->
       val[1] = curVal[1] if not val[1]?
       device.sanitizeParameterValue(val)
 
-      if val[0] != curVal[0] or val[1] != curVal[1]
-        parameterValues.push([k, val[0], val[1]])
-        syncState.spv.delete(k)
+#      if val[0] != curVal[0] or val[1] != curVal[1]
+       parameterValues.push([k, val[0], val[1]])
+       syncState.spv.delete(k)
   )
 
-  if parameterValues.length
+  if parameterValues.length && (! sessionContext.generatedSetRpcRequest)
     return {
       name: 'SetParameterValues'
       parameterList: ([p[0].join('.'), p[1], p[2]] for p in parameterValues)
