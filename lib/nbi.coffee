@@ -320,10 +320,6 @@ listener = (request, response) ->
                           response.end(JSON.stringify(task))
                         )
                       else
-                        __notification.notifyTask(task._id, {
-                            state: 'completed',
-                            task: task
-                          });
 
                         response.writeHead(200, {'Content-Type' : 'application/json'})
                         response.end(JSON.stringify(task))
@@ -343,7 +339,7 @@ listener = (request, response) ->
           # no task, send connection request only
           apiFunctions.connectionRequest(deviceId, (err) ->
             if err
-              __notification.notifyTask(uid, {state: 'offline',error: err,task: task})
+              __notification.notifyTask(uid, {state: 'offline', error: err, task: task})
               return
             __notification.notifyTask(uid, {
                 state: 'ok'

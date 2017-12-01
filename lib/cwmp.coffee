@@ -31,6 +31,8 @@ cache = require './cache'
 localCache = require './local-cache'
 db = require './db'
 logger = require './logger'
+scheduling = require './scheduling'
+
 __notification = require('./fnf-notification');
 
 MAX_CYCLES = 4
@@ -199,28 +201,6 @@ transferComplete = (sessionContext, rpc) ->
   )
 
 
-testSchedule = (schedule, timestamp) ->
-  range = schedule.schedule.nextRange(10, new Date(timestamp))
-  prev = schedule.schedule.prevRange(1, new Date(timestamp), new Date(timestamp - schedule.duration))
-
-  if prev
-    first = +(prev[0] ? 0)
-    last = +(prev[1] ? 0) + schedule.duration
-  else
-    first = +(range[0][0] ? 0)
-    last = +(range[0][1] ? 0) + schedule.duration
-
-  for r in range
-    if last < r[0]
-      break
-    last = +(r[1] ? 0) + schedule.duration
-
-  if timestamp >= first
-    return [true, Math.max(0, last - timestamp)]
-  else
-    return [false, first - timestamp]
-
-
 # Append providions and remove duplicates
 appendProvisions = (original, toAppend) ->
   modified = false
@@ -294,8 +274,13 @@ applyPresets = (sessionContext) ->
           eventsMatch = false
           break
 
-      continue if (not eventsMatch) or (preset.schedule and not
-        (preset.schedule.schedule and testSchedule(preset.schedule, sessionContext.timestamp)[0]))
+      continue if not eventsMatch
+
+      if preset.schedule
+        continue if not preset.schedule.schedule
+        r = scheduling.cron(sessionContext.timestamp, preset.schedule.schedule)
+        if not (r[0] + preset.schedule.duration > sessionContext.timestamp)
+          continue
 
       filteredPresets.push(preset)
       for k of preset.precondition
@@ -344,17 +329,21 @@ applyPresets = (sessionContext) ->
           sessionContext.faultsTouched ?= {}
           sessionContext.faultsTouched[channel] = true
 
-      sessionContext.presetCycles = (sessionContext.presetCycles or 0) + 1
+      # Don't increment when processing individual channels (e.g. after fault)
+      sessionContext.presetCycles = (sessionContext.presetCycles or 0) + 1 if not whiteList?
 
       if sessionContext.presetCycles > MAX_CYCLES
         fault = {
-          code: 'endless_cycle'
-          message: 'The provision seems to be repeating indefinitely'
+          code: 'preset_loop'
+          message: 'The presets are stuck in an endless configuration loop'
           timestamp: sessionContext.timestamp
         }
         recordFault(sessionContext, fault)
         session.clearProvisions(sessionContext)
         return sendAcsRequest(sessionContext)
+
+      sessionContext.deviceData.timestamps.dirty = 0;
+      sessionContext.deviceData.attributes.dirty = 0;
 
       session.rpcRequest(sessionContext, null, (err, fault, id, acsRequest) ->
         return throwError(err, sessionContext.httpResponse) if err
@@ -372,6 +361,10 @@ applyPresets = (sessionContext) ->
               sessionContext.faultsTouched[channel] = true
 
           if whiteList?
+            return applyPresets(sessionContext)
+
+          if sessionContext.deviceData.timestamps.dirty > 1 or
+              sessionContext.deviceData.attributes.dirty > 1
             return applyPresets(sessionContext)
 
         sendAcsRequest(sessionContext, id, acsRequest)
@@ -402,6 +395,9 @@ nextRpc = (sessionContext) ->
       if channel.startsWith('task_')
         taskId = channel.slice(5)
         sessionContext.doneTasks ?= []
+
+        __notification.notifyTask(taskId, {state: 'completed'});
+
         sessionContext.doneTasks.push(taskId)
         for t, j in sessionContext.tasks
           if t._id == taskId
@@ -479,7 +475,7 @@ endSession = (sessionContext, callback) ->
   counter = 3
 
   counter += 2
-  db.saveDevice(sessionContext.deviceId, sessionContext.deviceData, sessionContext.new, (err) ->
+  db.saveDevice(sessionContext.deviceId, sessionContext.deviceData, sessionContext.new, sessionContext.timestamp, (err) ->
     if err
       callback(err) if counter & 1
       return counter = 0
@@ -737,10 +733,8 @@ cacheDueTasksAndFaultsAndOperations = (deviceId, tasks, faults, operations, cach
 
 processRequest = (sessionContext, rpc) ->
   if rpc.cpeRequest?
+    __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
     if rpc.cpeRequest.name is 'Inform'
-       
-       __notification.notifyEvent(deviceId, rpc.cpeRequest.event, rpc.cpeRequest.parameterList);
-
       logger.accessInfo({
         sessionContext: sessionContext
         message: 'Inform'
@@ -858,9 +852,6 @@ listener = (httpRequest, httpResponse) ->
     )
 
     parsedRpc = (sessionContext, rpc, parseWarnings) ->
-      sessionContext.httpRequest = httpRequest
-      sessionContext.httpResponse = httpResponse
-
       for w in parseWarnings
         w.sessionContext = sessionContext
         w.rpc = rpc;
@@ -877,16 +868,19 @@ listener = (httpRequest, httpResponse) ->
     getSession(httpRequest.connection, sessionId, (err, sessionContext) ->
       return throwError(err, httpResponse) if err
 
-      if sessionContext and (sessionContext.sessionId != sessionId or
-          sessionContext.lastActivity + sessionContext.timeout * 1000 < Date.now())
-        logger.accessError({message: 'Invalid session', sessionContext: sessionContext})
-        httpResponse.writeHead(400, {'Connection': 'close'})
-        httpResponse.end('Invalid session')
-        stats.concurrentRequests -= 1
-        return
+      if sessionContext
+        sessionContext.httpRequest = httpRequest
+        sessionContext.httpResponse = httpResponse
 
-      # Check again just in case device included old session ID from the previous session
-      if not sessionContext and stats.concurrentRequests > MAX_CONCURRENT_REQUESTS
+        if sessionContext.sessionId != sessionId or
+            sessionContext.lastActivity + sessionContext.timeout * 1000 < Date.now()
+          logger.accessError({message: 'Invalid session', sessionContext: sessionContext})
+          httpResponse.writeHead(400, {'Connection': 'close'})
+          httpResponse.end('Invalid session')
+          stats.concurrentRequests -= 1
+          return
+      else if stats.concurrentRequests > MAX_CONCURRENT_REQUESTS
+        # Check again just in case device included old session ID from the previous session
         httpResponse.writeHead(503, {'Retry-after': 60, 'Connection': 'close'})
         httpResponse.end('503 Service Unavailable')
         stats.droppedRequests += 1
@@ -897,14 +891,11 @@ listener = (httpRequest, httpResponse) ->
       try
         rpc = soap.request(body, sessionContext?.cwmpVersion, parseWarnings)
       catch err
-        msg = {
+        logger.accessError({
           message: 'XML parse error'
           parseError: err.message.trim()
-          sessionContext: sessionContext or {}
-        }
-        msg.sessionContext.httpRequest = httpRequest
-        msg.sessionContext.httpResponse = httpResponse
-        logger.accessError(msg)
+          sessionContext: sessionContext or {httpRequest: httpRequest, httpResponse: httpResponse}
+        })
         httpResponse.writeHead(400, {'Connection': 'close'})
         httpResponse.end(err.message)
         stats.concurrentRequests -= 1
@@ -913,13 +904,10 @@ listener = (httpRequest, httpResponse) ->
       return parsedRpc(sessionContext, rpc, parseWarnings) if sessionContext
 
       if rpc.cpeRequest?.name isnt 'Inform'
-        msg = {
+        logger.accessError({
           message: 'Invalid session'
-          sessionContext: sessionContext or {}
-        }
-        msg.sessionContext.httpRequest = httpRequest
-        msg.sessionContext.httpResponse = httpResponse
-        logger.accessError(msg)
+          sessionContext: sessionContext or {httpRequest: httpRequest, httpResponse: httpResponse}
+        })
         httpResponse.writeHead(400, {'Connection': 'close'})
         httpResponse.end('Invalid session')
         stats.concurrentRequests -= 1
@@ -930,6 +918,8 @@ listener = (httpRequest, httpResponse) ->
       return session.init(deviceId, rpc.cwmpVersion, rpc.sessionTimeout ? config.get('SESSION_TIMEOUT', deviceId), (err, sessionContext) ->
         return throwError(err, httpResponse) if err
 
+        sessionContext.httpRequest = httpRequest
+        sessionContext.httpResponse = httpResponse
         sessionContext.sessionId = crypto.randomBytes(8).toString('hex')
         httpRequest.connection.setTimeout(sessionContext.timeout * 1000)
 

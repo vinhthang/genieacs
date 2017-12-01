@@ -113,7 +113,7 @@ loadParameters = (sessionContext, callback) ->
 
 generateRpcId = (sessionContext) ->
   return sessionContext.timestamp.toString(16) +
-    sessionContext.cycle.toString(16).slice(-1) +
+    "0#{sessionContext.cycle.toString(16)}".slice(-2) +
     "0#{sessionContext.rpcCount.toString(16)}".slice(-2)
 
 
@@ -138,11 +138,11 @@ inform = (sessionContext, rpcReq, callback) ->
     params.push([path, timestamp, {object: [timestamp, 0], value: [timestamp, p.slice(1)]}])
 
   params.push([['Events', 'Inform'], timestamp,
-    {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [timestamp, 'xsd:dateTime']]}])
+    {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [sessionContext.timestamp, 'xsd:dateTime']]}])
 
   for e in rpcReq.event
     params.push([['Events', e.replace(' ', '_')], timestamp,
-      {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [timestamp, 'xsd:dateTime']]}])
+      {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [sessionContext.timestamp, 'xsd:dateTime']]}])
 
   # Preload DeviceID params
   loadPath(sessionContext, ['DeviceID', '*'])
@@ -158,14 +158,18 @@ inform = (sessionContext, rpcReq, callback) ->
         {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [sessionContext.deviceId, 'xsd:string']]}])
 
       params.push([['Events', 'Registered'], timestamp,
-        {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [timestamp, 'xsd:dateTime']]}])
+        {object: [timestamp, 0], writable: [timestamp, 0], value: [timestamp, [sessionContext.timestamp, 'xsd:dateTime']]}])
 
     sessionContext.deviceData.timestamps.revision = 1
     sessionContext.deviceData.attributes.revision = 1
 
     toClear = null
     for p in params
-      toClear = device.set(sessionContext.deviceData, p[0], p[1], p[2], toClear)
+      # Don't need to clear wildcards for Events
+      if p[0][0] == 'Events'
+        device.set(sessionContext.deviceData, p[0], p[1], p[2])
+      else
+        toClear = device.set(sessionContext.deviceData, p[0], p[1], p[2], toClear)
 
     clear(sessionContext, toClear, (err) ->
       return callback(err, {name: 'InformResponse'})
@@ -328,7 +332,7 @@ addProvisions = (sessionContext, channel, provisions) ->
           sessionContext.channels[c] |= (a << j)
 
     for c in channels
-      sessionContext.channels[channel] |= (1 << sessionContext.provisions.length)
+      sessionContext.channels[c] |= (1 << sessionContext.provisions.length)
     sessionContext.provisions.push(provision)
 
 
@@ -573,10 +577,6 @@ rpcRequest = (sessionContext, _declarations, callback) ->
   if sessionContext.rpcRequest?
     return callback(null, null, generateRpcId(sessionContext), sessionContext.rpcRequest)
 
-  if sessionContext.deviceData.changes.has('prerequisite')
-    delete sessionContext.syncState
-    device.clearTrackers(sessionContext.deviceData, 'prerequisite')
-
   if sessionContext.virtualParameters.length == 0 and
       sessionContext.declarations.length == 0 and
       not _declarations?.length and
@@ -605,16 +605,19 @@ rpcRequest = (sessionContext, _declarations, callback) ->
 
       # Enforce max clear timestamp
       for c in toClear
-        if c[1] > sessionContext.timestamp
-          c[1] = sessionContext.timestamp
+        c[1] = sessionContext.timestamp if c[1] > sessionContext.timestamp
         for k, v of c[2]
-          if v > sessionContext.timestamp
-            c[2] = sessionContext.timestamp
+          c[2][k] = sessionContext.timestamp if v > sessionContext.timestamp
 
       sessionContext.declarations.push(decs)
       sessionContext.provisionsRet[inception] = ret
 
       for d in decs
+        # Enforce max timestamp
+        d[1] = sessionContext.timestamp if d[1] > sessionContext.timestamp
+        for k, v of d[2]
+          d[2][k] = sessionContext.timestamp if v > sessionContext.timestamp
+
         for ad in device.getAliasDeclarations(d[0], 1)
           loadPath(sessionContext, ad[0])
 
@@ -641,17 +644,33 @@ rpcRequest = (sessionContext, _declarations, callback) ->
       return rpcRequest(sessionContext, null, callback)
     )
 
-  if sessionContext.rpcCount >= 255 or
-      sessionContext.revisions.length >= 8 or
-      sessionContext.cycle >= 16 or
-      sessionContext.iteration >= MAX_ITERATIONS * (sessionContext.cycle + 1)
-
-    fault = {
-      code: 'endless_cycle'
-      message: 'The provision seems to be repeating indefinitely'
+  if sessionContext.rpcCount >= 255
+    return callback(null, {
+      code: 'too_many_rpcs'
+      message: 'Too many RPC requests'
       timestamp: sessionContext.timestamp
-    }
-    return callback(null, fault)
+    })
+
+  if sessionContext.revisions.length >= 8
+    return callback(null, {
+      code: 'deeply_nested_vparams'
+      message: 'Virtual parameters are referencing other virtual parameters in a deeply nested manner'
+      timestamp: sessionContext.timestamp
+    })
+
+  if sessionContext.cycle >= 255
+    return callback(null, {
+      code: 'too_many_cycles'
+      message: 'Too many provision cycles'
+      timestamp: sessionContext.timestamp
+    })
+
+  if sessionContext.iteration >= MAX_ITERATIONS * (sessionContext.cycle + 1)
+    return callback(null, {
+      code: 'too_many_commits'
+      message: 'Too many commit iterations'
+      timestamp: sessionContext.timestamp
+    })
 
   if (sessionContext.syncState?.virtualParameterDeclarations?.length or 0) < sessionContext.declarations.length
     inception = sessionContext.syncState?.virtualParameterDeclarations?.length or 0
@@ -664,20 +683,30 @@ rpcRequest = (sessionContext, _declarations, callback) ->
     allVirtualParameters = virtualParametersCache.get(sessionContext)
 
     vpd = vpd.filter((declaration) ->
-      if declaration[0].length == 1
-        if Object.keys(allVirtualParameters).length
-          toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, {object: [timestamp, 1], writable: [timestamp, 0]}, toClear)
-        else
-          toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, null, toClear)
-      else if declaration[0].length == 2
-        if declaration[0][1] == '*'
-          for k, v of allVirtualParameters
-            toClear = device.set(sessionContext.deviceData, ['VirtualParameters', k], timestamp, {object: [timestamp, 0]}, toClear)
-          toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, null, toClear)
-        else if not (declaration[0][1] of allVirtualParameters)
-          toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, null, toClear)
-        else
-          return true
+      if Object.keys(allVirtualParameters).length
+        if declaration[0].length == 1
+          # Avoid setting on every inform as "exist" timestamp is not saved in DB
+          if not sessionContext.deviceData.attributes.has(declaration[0])
+            toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, {object: [timestamp, 1], writable: [timestamp, 0]}, toClear)
+          return false
+        else if declaration[0].length == 2
+          if declaration[0][1] == '*'
+            for k, v of allVirtualParameters
+              toClear = device.set(sessionContext.deviceData, ['VirtualParameters', k], timestamp, {object: [timestamp, 0]}, toClear)
+            toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, null, toClear)
+            return false
+          else if declaration[0][1] of allVirtualParameters
+            # Avoid setting on every inform as "exist" timestamp is not saved in DB
+            if not sessionContext.deviceData.attributes.has(declaration[0])
+              toClear = device.set(sessionContext.deviceData, declaration[0], timestamp, {object: [timestamp, 0]}, toClear)
+            return true
+
+      for p in sessionContext.deviceData.paths.find(declaration[0], false, true)
+        if sessionContext.deviceData.attributes.has(p)
+          toClear ?= []
+          toClear.push([declaration[0], timestamp])
+          break
+
       return false
     )
 
@@ -696,6 +725,13 @@ rpcRequest = (sessionContext, _declarations, callback) ->
   if not provisions
     sessionContext.rpcRequest = generateGetRpcRequest(sessionContext)
     if not sessionContext.rpcRequest
+      # Only check after read stage is complete to minimize reprocessing of
+      # declarations especially during initial discovery of data model
+      if sessionContext.deviceData.changes.has('prerequisite')
+        delete sessionContext.syncState
+        device.clearTrackers(sessionContext.deviceData, 'prerequisite')
+        return rpcRequest(sessionContext, null, callback)
+
       toClear = null
       timestamp = sessionContext.timestamp + sessionContext.iteration + 1
 
@@ -782,7 +818,6 @@ rpcRequest = (sessionContext, _declarations, callback) ->
     return rpcRequest(sessionContext, null, callback)
 
   if sessionContext.rpcRequest
-    sessionContext.generatedSetRpcRequest = true;
     return callback(null, null, generateRpcId(sessionContext), sessionContext.rpcRequest)
 
   ++ sessionContext.revisions[inception]
@@ -992,25 +1027,33 @@ generateSetRpcRequest = (sessionContext) ->
 
   # Set values
   GPV_BATCH_SIZE = config.get('GPV_BATCH_SIZE', sessionContext.deviceId)
+  DATETIME_MILLISECONDS = config.get('DATETIME_MILLISECONDS', sessionContext.deviceId)
+  BOOLEAN_LITERAL = config.get('BOOLEAN_LITERAL', sessionContext.deviceId)
 
   parameterValues = []
   syncState.spv.forEach((v, k) ->
     return if parameterValues.length >= GPV_BATCH_SIZE
+    syncState.spv.delete(k)
     attrs = sessionContext.deviceData.attributes.get(k)
     if (curVal = attrs.value?[1])? and attrs.writable?[1]
       val = v.slice()
       val[1] = curVal[1] if not val[1]?
       device.sanitizeParameterValue(val)
 
-#      if val[0] != curVal[0] or val[1] != curVal[1]
-       parameterValues.push([k, val[0], val[1]])
-       syncState.spv.delete(k)
+      # Strip milliseconds
+      if val[1] == 'xsd:dateTime' and not DATETIME_MILLISECONDS and typeof val[0] == 'number'
+        val[0] -= val[0] % 1000
+
+      if val[0] != curVal[0] or val[1] != curVal[1]
+        parameterValues.push([k, val[0], val[1]])
   )
 
-  if parameterValues.length && (! sessionContext.generatedSetRpcRequest)
+  if parameterValues.length
     return {
       name: 'SetParameterValues'
       parameterList: ([p[0].join('.'), p[1], p[2]] for p in parameterValues)
+      DATETIME_MILLISECONDS: DATETIME_MILLISECONDS
+      BOOLEAN_LITERAL: BOOLEAN_LITERAL
     }
 
   # Download
@@ -1482,25 +1525,25 @@ rpcResponse = (sessionContext, id, rpcRes, callback) ->
 
     when 'RebootResponse'
       toClear = device.set(sessionContext.deviceData, common.parsePath('Reboot'),
-        timestamp + 1, {value: [timestamp + 1, [timestamp + 1, 'xsd:dateTime']]}, toClear)
+        timestamp + 1, {value: [timestamp + 1, [sessionContext.timestamp, 'xsd:dateTime']]}, toClear)
 
     when 'FactoryResetResponse'
       toClear = device.set(sessionContext.deviceData, common.parsePath('FactoryReset'),
-        timestamp + 1, {value: [timestamp + 1, [timestamp + 1, 'xsd:dateTime']]}, toClear)
+        timestamp + 1, {value: [timestamp + 1, [sessionContext.timestamp, 'xsd:dateTime']]}, toClear)
 
     when 'DownloadResponse'
       toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'Download'],
-        timestamp + 1, {value: [timestamp + 1, [timestamp + 1, 'xsd:dateTime']]}, toClear)
+        timestamp + 1, {value: [timestamp + 1, [sessionContext.timestamp, 'xsd:dateTime']]}, toClear)
 
       if rpcRes.status == 0
         toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'LastDownload'],
-          timestamp + 1, {value: [timestamp + 1, [timestamp + 1, 'xsd:dateTime']]}, toClear)
+          timestamp + 1, {value: [timestamp + 1, [sessionContext.timestamp, 'xsd:dateTime']]}, toClear)
         toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'LastFileType'],
-          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:dateTime']]}, toClear)
+          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:string']]}, toClear)
         toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'LastFileName'],
-          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:dateTime']]}, toClear)
+          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:string']]}, toClear)
         toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'LastTargetFileName'],
-          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:dateTime']]}, toClear)
+          timestamp + 1, {value: [timestamp + 1, [rpcReq.fileType, 'xsd:string']]}, toClear)
 
         toClear = device.set(sessionContext.deviceData, ['Downloads', rpcReq.instance, 'StartTime'],
           timestamp + 1, {value: [timestamp + 1, [+rpcRes.startTime, 'xsd:dateTime']]}, toClear)
