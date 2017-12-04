@@ -342,7 +342,7 @@ listener = (request, response) ->
               __notification.notifyTask(uid, {state: 'offline', error: err, task: task})
               return
             __notification.notifyTask(uid, {
-                state: 'ok'
+                state: 'online'
             })
           )
         else
