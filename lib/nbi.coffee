@@ -279,8 +279,6 @@ listener = (request, response) ->
             cache.del("#{deviceId}_tasks_faults_operations", (err) ->
               return throwError(err, response) if err
 
-
-
               if urlParts.query.connection_request?
                 apiFunctions.connectionRequest(deviceId, (err) ->
                   if err
