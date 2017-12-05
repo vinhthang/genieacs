@@ -98,7 +98,7 @@ options = {
     type: 'string',
     "default": 'monitor_notification'
   },
-  NOTIFICATION_EVENT: {
+  NOTIFICATION_TR069_EVENT: {
     type: 'string',
     "default": 'tr069_notification'
   },
