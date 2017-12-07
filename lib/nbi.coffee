@@ -305,15 +305,7 @@ listener = (request, response) ->
                       else if status is 'fault'
                         db.tasksCollection.findOne({_id : task._id}, (err, task) ->
                           return throwError(err, response) if err
-                          db.faultsCollection.findOne({
-                            _id: deviceId + ":task_" + task._id
-                          }, (err, fault) -> 
-                            __notification.notifyTask(task._id, {
-                              state: 'fault',
-                              task: task,
-                              fault: fault
-                            })
-                          );
+
                           response.writeHead(202, 'Task faulted', {'Content-Type' : 'application/json'})
                           response.end(JSON.stringify(task))
                         )

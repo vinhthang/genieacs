@@ -135,6 +135,13 @@ recordFault = (sessionContext, fault, provisions, channels) ->
     sessionContext.faultsTouched ?= {}
     sessionContext.faultsTouched[channel] = true
 
+    if channel.indexOf('task_') > -1
+      __notification.notifyTask(channel.substring(5), {
+        state: 'fault',
+        fault: fault
+      });
+
+
     logger.accessWarn({
       sessionContext: sessionContext
       message: 'Channel has faulted'
