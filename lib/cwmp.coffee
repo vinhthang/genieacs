@@ -250,8 +250,9 @@ applyPresets = (sessionContext) ->
           retryTimestamp = 0
         else
           retryTimestamp = fault.timestamp + (RETRY_DELAY * Math.pow(2, sessionContext.retries[channel])) * 1000
-
-        if retryTimestamp <= sessionContext.timestamp
+# remove retry fault
+# if retryTimestamp <= sessionContext.timestamp
+        if retryTimestamp <= 0
           whiteList = channel
           whiteListProvisions = fault.provisions
           break
